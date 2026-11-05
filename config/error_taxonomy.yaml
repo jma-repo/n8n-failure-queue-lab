@@ -1,0 +1,165 @@
+# What can go wrong, whether retrying can help, and how patient to be.
+#
+# One source of truth: the queue API refuses error types that are not listed here, the SQL in sql/rca joins on this
+# table (it is loaded into DuckDB as error_types), and docs/runbook.md needs one section per runbook anchor
+# (a test checks that).
+#
+#   retry delay = min(cap_s, base_s * 2^attempts), then jitter; max_attempts = retries before dead-lettering
+#   retryable: false  ->  dead-lettered on arrival, because a person has to look and retrying cannot help
+#
+# kind: fetch (the request failed) | dataset (a payload arrived but the whole thing is wrong) | row (one record is
+#       wrong) | audit (the batch looked suspicious) | system (the workflow itself broke)
+error_types:
+  http_5xx:
+    kind: fetch
+    retryable: true
+    max_attempts: 6
+    base_s: 60
+    cap_s: 3600
+    severity: warning
+    runbook: http-5xx
+    summary: The source answered with a 5xx status
+  timeout:
+    kind: fetch
+    retryable: true
+    max_attempts: 6
+    base_s: 60
+    cap_s: 3600
+    severity: warning
+    runbook: timeout
+    summary: The source did not answer within the request timeout
+  network:
+    kind: fetch
+    retryable: true
+    max_attempts: 6
+    base_s: 60
+    cap_s: 3600
+    severity: warning
+    runbook: network
+    summary: The connection failed (DNS, refused, reset)
+  rate_limited:
+    kind: fetch
+    retryable: true
+    max_attempts: 8
+    base_s: 120
+    cap_s: 7200
+    severity: warning
+    runbook: rate-limited
+    summary: The source answered 429 Too Many Requests
+  http_4xx:
+    kind: fetch
+    retryable: false
+    max_attempts: 1
+    base_s: 0
+    cap_s: 0
+    severity: critical
+    runbook: http-4xx
+    summary: The source rejected the request (URL, parameters or access changed)
+  unparseable:
+    kind: dataset
+    retryable: true
+    max_attempts: 3
+    base_s: 300
+    cap_s: 3600
+    severity: critical
+    runbook: unparseable
+    summary: The body is not valid JSON (truncated, HTML error page, BOM)
+  schema_drift:
+    kind: dataset
+    retryable: false
+    max_attempts: 1
+    base_s: 0
+    cap_s: 0
+    severity: critical
+    runbook: schema-drift
+    summary: The payload shape changed (field renamed or moved)
+  empty_payload:
+    kind: dataset
+    retryable: true
+    max_attempts: 4
+    base_s: 300
+    cap_s: 3600
+    severity: warning
+    runbook: empty-payload
+    summary: Valid response with no observations
+  missing_series:
+    kind: dataset
+    retryable: true
+    max_attempts: 4
+    base_s: 600
+    cap_s: 7200
+    severity: warning
+    runbook: missing-series
+    summary: An expected series is absent from the whole payload
+  stale_data:
+    kind: dataset
+    retryable: true
+    max_attempts: 8
+    base_s: 900
+    cap_s: 7200
+    severity: warning
+    runbook: stale-data
+    summary: The newest observation is older than the freshness limit
+  null_value:
+    kind: row
+    retryable: true
+    max_attempts: 4
+    base_s: 300
+    cap_s: 3600
+    severity: warning
+    runbook: null-value
+    summary: A value is null, empty or absent in one row
+  bad_type:
+    kind: row
+    retryable: true
+    max_attempts: 3
+    base_s: 300
+    cap_s: 3600
+    severity: warning
+    runbook: bad-type
+    summary: A value is not a plain decimal number such as N/A, 1,39 or 1e3
+  out_of_range:
+    kind: row
+    retryable: true
+    max_attempts: 3
+    base_s: 300
+    cap_s: 3600
+    severity: critical
+    runbook: out-of-range
+    summary: A number is outside the plausible range for its series
+  bad_date:
+    kind: row
+    retryable: false
+    max_attempts: 1
+    base_s: 0
+    cap_s: 0
+    severity: warning
+    runbook: bad-date
+    summary: An observation date is malformed, in the future, or on a weekend
+  duplicate_conflict:
+    kind: row
+    retryable: true
+    max_attempts: 3
+    base_s: 300
+    cap_s: 3600
+    severity: warning
+    runbook: duplicate-conflict
+    summary: The same series and date appear twice with different values
+  audit_jump:
+    kind: audit
+    retryable: true
+    max_attempts: 3
+    base_s: 1800
+    cap_s: 7200
+    severity: critical
+    runbook: audit-jump
+    summary: Too many series moved too far in one day, so the batch was held before publishing
+  workflow_error:
+    kind: system
+    retryable: false
+    max_attempts: 1
+    base_s: 0
+    cap_s: 0
+    severity: critical
+    runbook: workflow-error
+    summary: The n8n workflow itself failed (node crash, credentials, expression error)

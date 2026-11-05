@@ -1,0 +1,21 @@
+# Environments and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+node_modules/
+
+# Secrets and generated state
+.env
+data/
+out/
+*.duckdb
+*.duckdb.wal
+
+# Local tooling and notes
+.claude/
+HANDOFF.md
+*.log
+.DS_Store
+Thumbs.db
