@@ -144,3 +144,13 @@ test("two thousand weekdays validate in well under a second", () => {
   assert.equal(v.valid_rows.length, 2000 * SERIES.length);
   assert.ok(Date.now() - started < 1000);
 });
+
+test("the order of the observations does not matter: the real API lists the newest day first", () => {
+  const days = ["2026-10-30", "2026-11-02", "2026-11-03"];
+  const forward = run(payload(days));
+  const backward = run(payload([...days].reverse()));
+  assert.deepEqual(backward.valid_rows, forward.valid_rows);
+  assert.deepEqual([backward.row_failures, backward.dataset_failures], [forward.row_failures, forward.dataset_failures]);
+  const jumbled = run(payload(days, (obs) => [obs[1], obs[2], obs[0]]));
+  assert.deepEqual(jumbled.valid_rows, forward.valid_rows);
+});

@@ -105,6 +105,8 @@ Each can be partial (`--p 0.3`), self-ending (`--ttl 60`) or short-lived (`--fir
 **Live mode.** Put `LAB_SOURCE_BASE=https://www.bankofcanada.ca` in `.env` and run `uv run lab up` to ingest the real exchange rates
 (USD, EUR, GBP, JPY, CNY, AUD, CHF, MXN against CAD). The Bank publishes once a day around 16:30 Eastern and its terms forbid
 circumventing request limits, so one request per run at the default 15-minute schedule is already generous.
+Checked once on 2026-11-05: one ingest through n8n against the real API validated and published 40 of 40 cells, and the values matched a direct request.
+The real API lists the newest day first; the validator does not depend on order (there is a test for it).
 
 ## SQL root-cause analysis
 
