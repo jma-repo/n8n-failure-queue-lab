@@ -1,0 +1,85 @@
+name: n8n-failure-queue-lab
+
+# Everything listens on 127.0.0.1 only. Secrets come from .env (run `uv run lab init` once).
+services:
+  queue-api:
+    build: .
+    image: lab-services:local
+    command: ["uvicorn", "--factory", "lab.queue_api.app:create_app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      LAB_DB_PATH: /data/lab.duckdb
+      LAB_API_TOKEN: ${LAB_API_TOKEN:?run `uv run lab init` first}
+      LAB_ALLOW_ADMIN: "1" # /admin/reset and /admin/policy, for the lab and the tests; switch off anywhere real
+      LAB_TIME_SCALE: ${LAB_TIME_SCALE:-1}
+    volumes:
+      - lab-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  source-sim:
+    image: lab-services:local
+    command: ["uvicorn", "--factory", "lab.source_sim.app:create_app", "--host", "0.0.0.0", "--port", "8080"]
+    depends_on:
+      queue-api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8080/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:8025:8025" # web UI and API; SMTP (1025) stays inside the compose network
+
+  n8n:
+    image: n8nio/n8n:2.46.6
+    depends_on:
+      queue-api:
+        condition: service_healthy
+      source-sim:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      TZ: America/Edmonton
+      GENERIC_TIMEZONE: America/Edmonton
+      N8N_HOST: localhost
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      N8N_SECURE_COOKIE: "false"
+      N8N_WEBHOOK_URL: http://localhost:5678/
+      N8N_RUNNERS_TASK_TIMEOUT: "60"
+      N8N_UNVERIFIED_PACKAGES_ENABLED: "false"
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?run `uv run lab init` first}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false" # the free way to configure workflows: environment variables, not paid Variables
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "false"
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      LAB_QUEUE_URL: http://queue-api:8000
+      LAB_API_TOKEN: ${LAB_API_TOKEN}
+      LAB_SOURCE_BASE: ${LAB_SOURCE_BASE:-http://source-sim:8080}
+      LAB_SERIES: FXUSDCAD,FXEURCAD,FXGBPCAD,FXJPYCAD,FXCNYCAD,FXAUDCAD,FXCHFCAD,FXMXNCAD
+      LAB_ALERT_TO: oncall@lab.test
+      LAB_RUNBOOK_URL: https://github.com/jma-repo/n8n-failure-queue-lab/blob/main/docs/runbook.md
+    volumes:
+      - n8n-data:/home/node/.n8n
+    ports:
+      - "127.0.0.1:5678:5678"
+
+volumes:
+  n8n-data:
+  lab-data:
